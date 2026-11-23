@@ -40,7 +40,13 @@ jobs:
           set -e
           php artisan octane:start --server=swoole --host=127.0.0.1 --port=8000 --workers=1 --task-workers=1 > /tmp/octane-default.log 2>&1 &
           echo $! > /tmp/octane-default.pid
-          for i in $(seq 1 60); do curl -fsS -X POST http://127.0.0.1:8000/health && break || sleep 1; done
+          for i in $(seq 1 60); do
+            code="$(curl -sS -o /tmp/octane-health.json -w '%{http_code}' -X POST http://127.0.0.1:8000/health || true)"
+            if [ "$code" = "200" ]; then cat /tmp/octane-health.json; break; fi
+            if ! kill -0 "$(cat /tmp/octane-default.pid)" 2>/dev/null; then cat /tmp/octane-default.log; cat storage/logs/laravel.log 2>/dev/null || true; exit 1; fi
+            sleep 1
+          done
+          test "$(cat /tmp/octane-health.json)" = '{"ready":true}' || { cat /tmp/octane-default.log; cat storage/logs/laravel.log 2>/dev/null || true; exit 1; }
           curl -fsS -X POST http://127.0.0.1:8000/baseline | tee /tmp/default-baseline.json
           grep -q '"is_admin":0' /tmp/default-baseline.json
           curl -fsS -X POST http://127.0.0.1:8000/force > /tmp/default-force.json &
@@ -66,7 +72,13 @@ jobs:
           set -e
           php artisan octane:start --server=swoole --host=127.0.0.1 --port=8000 --workers=1 --task-workers=1 > /tmp/octane-coroutine.log 2>&1 &
           echo $! > /tmp/octane-coroutine.pid
-          for i in $(seq 1 60); do curl -fsS -X POST http://127.0.0.1:8000/health && break || sleep 1; done
+          for i in $(seq 1 60); do
+            code="$(curl -sS -o /tmp/octane-health.json -w '%{http_code}' -X POST http://127.0.0.1:8000/health || true)"
+            if [ "$code" = "200" ]; then cat /tmp/octane-health.json; break; fi
+            if ! kill -0 "$(cat /tmp/octane-coroutine.pid)" 2>/dev/null; then cat /tmp/octane-coroutine.log; cat storage/logs/laravel.log 2>/dev/null || true; exit 1; fi
+            sleep 1
+          done
+          test "$(cat /tmp/octane-health.json)" = '{"ready":true}' || { cat /tmp/octane-coroutine.log; cat storage/logs/laravel.log 2>/dev/null || true; exit 1; }
           curl -fsS -X POST http://127.0.0.1:8000/baseline | tee /tmp/coroutine-baseline.json
           grep -q '"is_admin":0' /tmp/coroutine-baseline.json
           curl -fsS -X POST http://127.0.0.1:8000/force > /tmp/coroutine-force.json &
@@ -92,6 +104,7 @@ jobs:
           cp /tmp/octane-*.log /tmp/octane-integration-evidence/ 2>/dev/null || true
           cp /tmp/default-*.json /tmp/octane-integration-evidence/ 2>/dev/null || true
           cp /tmp/coroutine-*.json /tmp/octane-integration-evidence/ 2>/dev/null || true
+          cp .github/security-tests/octane-app/storage/logs/* /tmp/octane-integration-evidence/ 2>/dev/null || true
           { php -v | head -n 1; php --ri swoole | head -n 20 || true; } > /tmp/octane-integration-evidence/runtime.txt
       - uses: actions/upload-artifact@v4
         if: always()
