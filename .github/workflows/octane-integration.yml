@@ -2,7 +2,7 @@ name: Laravel Octane Swoole integration verification
 on:
   push:
     branches: ['security/repro-octane-eloquent-coroutine-*']
-    paths: ['.github/security-tests/octane-app/**', '.github/security-tests/octane-integration.yml']
+    paths: ['.github/security-tests/octane-app/**', '.github/workflows/octane-integration.yml']
 permissions:
   contents: read
 jobs:
