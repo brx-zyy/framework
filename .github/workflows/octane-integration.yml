@@ -31,6 +31,7 @@ jobs:
         run: composer install --no-interaction --prefer-dist --no-progress
       - name: Prepare MySQL fixture
         working-directory: .github/security-tests/octane-app
+        env: { DB_HOST: '127.0.0.1', DB_PORT: '3306', DB_DATABASE: 'laravel_test', DB_USERNAME: 'root', DB_PASSWORD: 'password' }
         run: php setup.php
       - name: Verify default Octane configuration (coroutines disabled)
         working-directory: .github/security-tests/octane-app
