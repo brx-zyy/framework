@@ -7,6 +7,12 @@ on:
     paths:
       - '.github/security-tests/unguarded-coroutine-server.php'
       - '.github/workflows/unguarded-coroutine-probe.yml'
+  pull_request:
+    branches:
+      - '13.x'
+    paths:
+      - '.github/security-tests/unguarded-coroutine-server.php'
+      - '.github/workflows/unguarded-coroutine-probe.yml'
 
 permissions:
   contents: read
