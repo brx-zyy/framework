@@ -67,6 +67,9 @@ jobs:
       - name: Test withoutEvents race during real PDO MySQL suspension
         run: |
           set -e
+          control="$(curl --silent --show-error -X POST http://127.0.0.1:9501/ordinary-quiet)"
+          echo "Observer control (no quiet context): $control"
+          echo "$control" | grep -q '"observer_seen":1'
           curl --silent --show-error -X POST http://127.0.0.1:9501/quiet > /tmp/quiet-result.json &
           pid=$!
           sleep 0.3
