@@ -28,4 +28,4 @@ jobs:
           composer-command: composer update --prefer-stable --prefer-dist --no-interaction --no-progress --with="phpunit/phpunit:^13.0.3"
 
       - name: Run focused integration test
-        run: vendor/bin/phpunit --no-coverage tests/JsonSchema/MixedEnumIntegrationTest.php
+        run: vendor/bin/phpunit --no-coverage tests/JsonSchema/ValidationRulesTest.php tests/JsonSchema/MixedEnumIntegrationTest.php
