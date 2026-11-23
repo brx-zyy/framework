@@ -1,0 +1,90 @@
+name: Eloquent unguarded coroutine regression probe
+
+on:
+  push:
+    branches:
+      - 'security/repro-eloquent-unguarded-coroutine-*'
+    paths:
+      - '.github/security-tests/unguarded-coroutine-server.php'
+      - '.github/workflows/unguarded-coroutine-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  reproduce:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up PHP with SQLite and OpenSwoole
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: ctype, filter, hash, mbstring, openssl, session, tokenizer, pdo_sqlite, sqlite3, swoole
+          coverage: none
+          tools: composer:v2
+
+      - name: Install framework runtime dependencies
+        run: composer install --no-interaction --prefer-dist --no-progress --no-dev
+
+      - name: Start isolated OpenSwoole test server
+        run: |
+          php .github/security-tests/unguarded-coroutine-server.php > /tmp/unguarded-server.log 2>&1 &
+          echo $! > /tmp/unguarded-server.pid
+          for i in $(seq 1 40); do
+            if curl --silent --fail http://127.0.0.1:9501/health; then
+              echo
+              exit 0
+            fi
+            sleep 0.5
+          done
+          cat /tmp/unguarded-server.log
+          exit 1
+
+      - name: Verify ordinary mass assignment is guarded
+        run: |
+          result="$(curl --silent --show-error -X POST http://127.0.0.1:9501/baseline)"
+          echo "Sequential control: $result"
+          echo "$result" | grep -q '"is_admin":0'
+
+      - name: Interleave forceCreate with a second HTTP request
+        id: race
+        run: |
+          set -e
+          curl --silent --show-error -X POST http://127.0.0.1:9501/force > /tmp/force-result.json &
+          force_pid=$!
+          sleep 0.2
+          curl --silent --show-error -X POST http://127.0.0.1:9501/ordinary > /tmp/ordinary-result.json
+          wait "$force_pid"
+          echo "Force request: $(cat /tmp/force-result.json)"
+          echo "Concurrent ordinary request: $(cat /tmp/ordinary-result.json)"
+          if grep -q '"is_admin":1' /tmp/ordinary-result.json; then
+            echo "result=REPRODUCED" >> "$GITHUB_OUTPUT"
+            echo "## Result: reproduced" >> "$GITHUB_STEP_SUMMARY"
+            echo "A normal concurrent Eloquent create() persisted a guarded is_admin=1 attribute while another coroutine was inside forceCreate()." >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "result=NOT_REPRODUCED" >> "$GITHUB_OUTPUT"
+            echo "## Result: not reproduced" >> "$GITHUB_STEP_SUMMARY"
+            echo "The concurrent ordinary create() did not persist the guarded attribute in this runtime." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Preserve reproduction evidence
+        if: always()
+        run: |
+          mkdir -p /tmp/eloquent-race-evidence
+          cp /tmp/unguarded-server.log /tmp/eloquent-race-evidence/ 2>/dev/null || true
+          cp /tmp/force-result.json /tmp/eloquent-race-evidence/ 2>/dev/null || true
+          cp /tmp/ordinary-result.json /tmp/eloquent-race-evidence/ 2>/dev/null || true
+          {
+            echo "PHP: $(php -v | head -n 1)"
+            php --ri swoole | head -n 12 || true
+          } > /tmp/eloquent-race-evidence/runtime.txt
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: eloquent-unguarded-coroutine-evidence
+          path: /tmp/eloquent-race-evidence/
+          if-no-files-found: warn
