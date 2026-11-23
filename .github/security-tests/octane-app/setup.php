@@ -1,7 +1,7 @@
 <?php
 $pdo = new PDO(
-    'mysql:host='.getenv('DB_HOST').';port='.getenv('DB_PORT').';dbname='.getenv('DB_DATABASE').';charset=utf8mb4',
-    getenv('DB_USERNAME'), getenv('DB_PASSWORD'),
+    'mysql:host='.(getenv('DB_HOST') ?: '127.0.0.1').';port='.(getenv('DB_PORT') ?: '3306').';dbname='.(getenv('DB_DATABASE') ?: 'laravel_test').';charset=utf8mb4',
+    (getenv('DB_USERNAME') ?: 'root'), (getenv('DB_PASSWORD') ?: 'password'),
     [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]
 );
 $pdo->exec('DROP TABLE IF EXISTS accounts');
