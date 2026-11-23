@@ -43,6 +43,9 @@ class MixedEnumIntegrationTest extends TestCase
 
         // "01" is not one of the schema's enumerated values, but the current
         // MatchesEnum implementation accepts it through PHP's loose comparison.
-        $validator = Validator::make(['choice' => '01'], $rules);\n\n        $this->assertTrue($validator->passes());\n        $this->assertSame(['choice' => '01'], $validator->validated());
+        $validator = Validator::make(['choice' => '01'], $rules);
+
+        $this->assertTrue($validator->passes());
+        $this->assertSame(['choice' => '01'], $validator->validated());
     }
 }
