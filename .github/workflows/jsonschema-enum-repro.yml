@@ -1,0 +1,31 @@
+name: JSON Schema mixed-enum integration repro
+
+on:
+  push:
+    branches:
+      - security/jsonschema-enum-repro.x
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  repro:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup PHP project
+        uses: ./.github/actions/setup-php-project
+        with:
+          php-version: '8.4'
+          extensions: dom, curl, libxml, mbstring, zip, pdo, sqlite, pdo_sqlite, gd, gmp
+          ini-values: error_reporting=E_ALL
+          composer-command: composer update --prefer-stable --prefer-dist --no-interaction --no-progress --with="phpunit/phpunit:^13.0.3"
+
+      - name: Run focused integration test
+        run: vendor/bin/phpunit --no-coverage tests/JsonSchema/MixedEnumIntegrationTest.php
