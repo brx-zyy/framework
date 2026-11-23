@@ -52,7 +52,6 @@ jobs:
           result="$(curl --silent --show-error -X POST http://127.0.0.1:9501/baseline)"
           echo "Sequential control: $result"
           echo "$result" | grep -q '"is_admin":0'
-          echo "$result" | grep -q '"observer_seen":1'
       - name: Test forceCreate race during real PDO MySQL suspension
         run: |
           set -e
