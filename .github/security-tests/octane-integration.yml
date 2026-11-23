@@ -1,0 +1,100 @@
+name: Laravel Octane Swoole integration verification
+on:
+  push:
+    branches: ['security/repro-octane-eloquent-coroutine-*']
+    paths: ['.github/security-tests/octane-app/**', '.github/security-tests/octane-integration.yml']
+permissions:
+  contents: read
+jobs:
+  octane-integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    services:
+      mysql:
+        image: mysql:8.0
+        env: { MYSQL_ROOT_PASSWORD: password, MYSQL_DATABASE: laravel_test }
+        ports: ['3306:3306']
+        options: >-
+          --health-cmd="mysqladmin ping -h 127.0.0.1 -ppassword"
+          --health-interval=5s --health-timeout=5s --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up PHP, Swoole and Composer
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: ctype, filter, hash, mbstring, openssl, session, tokenizer, pdo_mysql, swoole
+          coverage: none
+          tools: composer:v2
+      - name: Install Laravel Framework and Laravel Octane test application
+        working-directory: .github/security-tests/octane-app
+        run: composer install --no-interaction --prefer-dist --no-progress
+      - name: Prepare MySQL fixture
+        working-directory: .github/security-tests/octane-app
+        run: php setup.php
+      - name: Verify default Octane configuration (coroutines disabled)
+        working-directory: .github/security-tests/octane-app
+        env: { OCTANE_COROUTINES: 'false' }
+        run: |
+          set -e
+          php artisan octane:start --server=swoole --host=127.0.0.1 --port=8000 --workers=1 --task-workers=1 > /tmp/octane-default.log 2>&1 &
+          echo $! > /tmp/octane-default.pid
+          for i in $(seq 1 60); do curl -fsS -X POST http://127.0.0.1:8000/health && break || sleep 1; done
+          curl -fsS -X POST http://127.0.0.1:8000/baseline | tee /tmp/default-baseline.json
+          grep -q '"is_admin":0' /tmp/default-baseline.json
+          curl -fsS -X POST http://127.0.0.1:8000/force > /tmp/default-force.json &
+          p=$!
+          sleep 0.3
+          curl -fsS -X POST http://127.0.0.1:8000/ordinary | tee /tmp/default-ordinary.json
+          wait $p
+          grep -q '"is_admin":0' /tmp/default-ordinary.json
+          curl -fsS -X POST http://127.0.0.1:8000/ordinary-quiet | tee /tmp/default-observer-control.json
+          grep -q '"observer_seen":1' /tmp/default-observer-control.json
+          curl -fsS -X POST http://127.0.0.1:8000/quiet > /tmp/default-quiet.json &
+          p=$!
+          sleep 0.3
+          curl -fsS -X POST http://127.0.0.1:8000/ordinary-quiet | tee /tmp/default-observer.json
+          wait $p
+          grep -q '"observer_seen":1' /tmp/default-observer.json
+          kill $(cat /tmp/octane-default.pid) || true
+          echo "Default Octane: no race observed (negative control passed)." >> "$GITHUB_STEP_SUMMARY"
+      - name: Verify explicitly coroutine-enabled Octane configuration
+        working-directory: .github/security-tests/octane-app
+        env: { OCTANE_COROUTINES: 'true' }
+        run: |
+          set -e
+          php artisan octane:start --server=swoole --host=127.0.0.1 --port=8000 --workers=1 --task-workers=1 > /tmp/octane-coroutine.log 2>&1 &
+          echo $! > /tmp/octane-coroutine.pid
+          for i in $(seq 1 60); do curl -fsS -X POST http://127.0.0.1:8000/health && break || sleep 1; done
+          curl -fsS -X POST http://127.0.0.1:8000/baseline | tee /tmp/coroutine-baseline.json
+          grep -q '"is_admin":0' /tmp/coroutine-baseline.json
+          curl -fsS -X POST http://127.0.0.1:8000/force > /tmp/coroutine-force.json &
+          p=$!
+          sleep 0.3
+          curl -fsS -X POST http://127.0.0.1:8000/ordinary | tee /tmp/coroutine-ordinary.json
+          wait $p
+          grep -q '"is_admin":1' /tmp/coroutine-ordinary.json
+          curl -fsS -X POST http://127.0.0.1:8000/ordinary-quiet | tee /tmp/coroutine-observer-control.json
+          grep -q '"observer_seen":1' /tmp/coroutine-observer-control.json
+          curl -fsS -X POST http://127.0.0.1:8000/quiet > /tmp/coroutine-quiet.json &
+          p=$!
+          sleep 0.3
+          curl -fsS -X POST http://127.0.0.1:8000/ordinary-quiet | tee /tmp/coroutine-observer.json
+          wait $p
+          grep -q '"observer_seen":0' /tmp/coroutine-observer.json
+          kill $(cat /tmp/octane-coroutine.pid) || true
+          echo "Coroutine-enabled Octane: both races reproduced." >> "$GITHUB_STEP_SUMMARY"
+      - name: Preserve Octane integration evidence
+        if: always()
+        run: |
+          mkdir -p /tmp/octane-integration-evidence
+          cp /tmp/octane-*.log /tmp/octane-integration-evidence/ 2>/dev/null || true
+          cp /tmp/default-*.json /tmp/octane-integration-evidence/ 2>/dev/null || true
+          cp /tmp/coroutine-*.json /tmp/octane-integration-evidence/ 2>/dev/null || true
+          { php -v | head -n 1; php --ri swoole | head -n 20 || true; } > /tmp/octane-integration-evidence/runtime.txt
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: laravel-octane-swoole-integration-evidence
+          path: /tmp/octane-integration-evidence/
+          if-no-files-found: warn
